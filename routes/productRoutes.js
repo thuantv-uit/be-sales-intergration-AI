@@ -2,8 +2,13 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const { auth, admin } = require('../middleware/auth');
+const { CloudinaryProvider } = require('../config/cloudinary');
+const multer = require('multer');
 
-// Lấy tất cả sản phẩm
+// Cấu hình multer để xử lý upload file
+const storage = multer.memoryStorage(); // Sử dụng memoryStorage để lấy buffer
+const upload = multer({ storage: storage });
+
 router.get('/', async (req, res) => {
   try {
     const products = await Product.find();
@@ -13,7 +18,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Lấy chi tiết sản phẩm
 router.get('/:id', async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -24,37 +28,75 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Thêm sản phẩm (admin)
-router.post('/', auth, admin, async (req, res) => {
-  const product = new Product({
-    name: req.body.name,
-    price: req.body.price,
-    description: req.body.description,
-    image: req.body.image,
-    stock: req.body.stock
-  });
+router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   try {
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
+
+    const { name, price, description, stock } = req.body;
+
+    if (!name || !price || !stock) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    let imageUrl = '';
+    if (req.file) {
+      imageUrl = await CloudinaryProvider.uploadToCloudinary(req.file.buffer, 'ecommerce_products');
+      console.log('Generated image URL:', imageUrl);
+    } else {
+      console.log('No image file uploaded');
+    }
+
+    const product = new Product({
+      name,
+      price: Number(price),
+      description,
+      image: imageUrl,
+      stock: Number(stock),
+    });
+
     const newProduct = await product.save();
+    console.log('Saved product:', newProduct);
     res.status(201).json(newProduct);
   } catch (err) {
+    console.error('Error in POST /products:', err);
     res.status(400).json({ message: err.message });
   }
 });
 
-// Cập nhật sản phẩm (admin)
-router.put('/:id', auth, admin, async (req, res) => {
+router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
   try {
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
+
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    Object.assign(product, req.body);
+
+    const { name, price, description, stock } = req.body;
+
+    if (req.file) {
+      product.image = await CloudinaryProvider.uploadToCloudinary(req.file.buffer, 'ecommerce_products');
+      console.log('Updated image URL:', product.image);
+    }
+
+    product.name = name || product.name;
+    product.price = price ? Number(price) : product.price;
+    product.description = description || product.description;
+    product.stock = stock ? Number(stock) : product.stock;
+
+    if (!product.name || !product.price || !product.stock) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
     const updatedProduct = await product.save();
+    console.log('Updated product:', updatedProduct);
     res.json(updatedProduct);
   } catch (err) {
+    console.error('Error in PUT /products:', err);
     res.status(400).json({ message: err.message });
   }
 });
 
-// Xóa sản phẩm (admin)
 router.delete('/:id', auth, admin, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
