@@ -6,9 +6,29 @@ const { CloudinaryProvider } = require('../config/cloudinary');
 const multer = require('multer');
 
 // Cấu hình multer để xử lý upload file
-const storage = multer.memoryStorage(); // Sử dụng memoryStorage để lấy buffer
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+// Tìm kiếm sản phẩm theo tên
+router.get('/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    console.log('Search query:', q);
+
+    if (!q) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+
+    const products = await Product.find({ name: { $regex: q, $options: 'i' } });
+    console.log('Search results:', products);
+    res.json(products);
+  } catch (err) {
+    console.error('Error in search:', err);
+    res.status(500).json({ message: `Server error: ${err.message}` });
+  }
+});
+
+// Lấy danh sách tất cả sản phẩm
 router.get('/', async (req, res) => {
   try {
     const products = await Product.find();
@@ -18,9 +38,14 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Lấy thông tin sản phẩm theo ID
 router.get('/:id', async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const { id } = req.params;
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
     res.json(product);
   } catch (err) {
@@ -28,6 +53,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Thêm sản phẩm mới
 router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   try {
     console.log('Request body:', req.body);
@@ -64,12 +90,18 @@ router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   }
 });
 
+// Cập nhật thông tin sản phẩm
 router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
   try {
     console.log('Request body:', req.body);
     console.log('Request file:', req.file);
 
-    const product = await Product.findById(req.params.id);
+    const { id } = req.params;
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     const { name, price, description, stock } = req.body;
@@ -97,11 +129,16 @@ router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
   }
 });
 
+// Xóa sản phẩm
 router.delete('/:id', auth, admin, async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const { id } = req.params;
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    await Product.findByIdAndDelete(req.params.id); // Thay product.remove() bằng findByIdAndDelete
+    await Product.findByIdAndDelete(id);
     res.json({ message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
